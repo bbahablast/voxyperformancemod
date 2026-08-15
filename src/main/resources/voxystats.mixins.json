@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "me.bbahablast.voxystats.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "SectionSerializationStorageAccessor",
+    "RocksDBStorageBackendAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

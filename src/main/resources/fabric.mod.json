@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "voxystats",
+  "version": "${version}",
+  "name": "Voxy Storage & Stats",
+  "description": "Manages the Voxy LOD store on disk: size accounting, pruning and diagnostics.",
+  "authors": [
+    "bbahablast"
+  ],
+  "contact": {
+    "sources": "https://github.com/bbahablast/voxyperformancemod"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "me.bbahablast.voxystats.VoxyStatsClient"
+    ]
+  },
+  "mixins": [
+    {
+      "config": "voxystats.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "minecraft": "~26.2",
+    "fabricloader": ">=0.19.0",
+    "voxy": ">=0.2.18-beta"
+  }
+}
