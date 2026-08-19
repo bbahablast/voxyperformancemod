@@ -46,8 +46,14 @@ public class StatsDebugEntry implements DebugScreenEntry {
         var lines = new ArrayList<String>();
 
         if (stats.sizesAvailable()) {
-            lines.add(String.format("Store: %s on disk, %s live, %s reclaimable",
+            // SSTs and memtables are reported separately on purpose. A young store has
+            // thousands of sections and zero SST bytes, because RocksDB has not filled a
+            // memtable yet -- showing only the SST figure reads as "nothing is stored".
+            lines.add(String.format("Store: %s total (%s in SSTs, %s unflushed)",
+                    formatBytes(stats.totalBytes()),
                     formatBytes(stats.sstBytes()),
+                    formatBytes(stats.unflushedBytes())));
+            lines.add(String.format("Live: %s, reclaimable by compaction: %s",
                     formatBytes(stats.liveBytes()),
                     formatBytes(stats.reclaimableBytes())));
         } else {

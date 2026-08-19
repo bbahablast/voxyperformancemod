@@ -14,6 +14,10 @@ public final class StoreInspector {
     /** Levels are 0 .. MAX_LOD_LAYER inclusive. */
     public static final int LEVEL_COUNT = WorldEngine.MAX_LOD_LAYER + 1;
 
+    private static final String SST_SIZE = "rocksdb.total-sst-files-size";
+    private static final String LIVE_SIZE = "rocksdb.estimate-live-data-size";
+    private static final String MEMTABLE_SIZE = "rocksdb.cur-size-all-mem-tables";
+
     private StoreInspector() {}
 
     /**
@@ -40,15 +44,26 @@ public final class StoreInspector {
         StorageBackend backend = StoreAccess.backendOf(engine);
         RocksDBStorageBackend rocks = backend == null ? null : StoreAccess.rocksIn(backend);
         if (rocks == null) {
-            return new StoreStats(counts, 0, 0, false);
+            return new StoreStats(counts, 0, 0, 0, false);
         }
 
-        long sst = longProperty(rocks, "rocksdb.total-sst-files-size");
-        long live = longProperty(rocks, "rocksdb.estimate-live-data-size");
-        if (sst < 0 || live < 0) {
-            return new StoreStats(counts, 0, 0, false);
+        long sst = longProperty(rocks, SST_SIZE);
+        long unflushed = longProperty(rocks, MEMTABLE_SIZE);
+        long live = longProperty(rocks, LIVE_SIZE);
+        if (sst < 0 || unflushed < 0 || live < 0) {
+            return new StoreStats(counts, 0, 0, 0, false);
         }
-        return new StoreStats(counts, sst, live, true);
+        return new StoreStats(counts, sst, unflushed, live, true);
+    }
+
+    /** Bytes the store is holding, flushed or not. Returns -1 if unavailable. */
+    public static long totalBytes(RocksDBStorageBackend rocks) {
+        long sst = longProperty(rocks, SST_SIZE);
+        long unflushed = longProperty(rocks, MEMTABLE_SIZE);
+        if (sst < 0 || unflushed < 0) {
+            return -1;
+        }
+        return sst + unflushed;
     }
 
     /** Returns -1 if the property could not be read. */

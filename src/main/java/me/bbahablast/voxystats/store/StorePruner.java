@@ -80,15 +80,12 @@ public final class StorePruner {
         }
     }
 
+    /**
+     * Counts memtables as well as SSTs. Measuring SSTs alone would report a store that
+     * has not flushed yet as 0 bytes, making any prune look like it freed nothing.
+     */
     private static long diskBytes(RocksDBStorageBackend rocks) {
-        var accessor = (RocksDBStorageBackendAccessor) rocks;
-        try {
-            String value = accessor.voxystats$getDb()
-                    .getProperty(accessor.voxystats$getWorldSections(), "rocksdb.total-sst-files-size");
-            return value == null ? -1 : Long.parseLong(value.trim());
-        } catch (RocksDBException | NumberFormatException e) {
-            return -1;
-        }
+        return StoreInspector.totalBytes(rocks);
     }
 
     /**
