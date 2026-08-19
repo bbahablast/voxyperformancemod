@@ -6,7 +6,25 @@ store on disk and reports what it contains.
 Voxy generates a lot of data and gives you no way to see how much, or to get any of it
 back. This adds size accounting, pruning that actually reclaims disk, and an F3 readout.
 
-**Status: early. The storage layer works; there is no GUI yet.**
+**Status: early. There is no GUI yet — everything is driven by commands and F3.**
+
+## Commands
+
+| Command | Does |
+| --- | --- |
+| `/voxystats stats` | section counts and byte totals for the loaded world |
+| `/voxystats list` | every store on disk, largest first, with size and age |
+| `/voxystats compact` | compacts the loaded world's store, reclaiming deleted space |
+| `/voxystats delete <n> confirm` | deletes a whole store from `list`, refusing one in use |
+
+`list` finds stores for worlds that are not loaded, which is the point — the space you
+want back usually belongs to a server you have stopped playing. Multiplayer stores are
+grouped by server address; the per-world directory below it is a hash of seed and
+dimension and cannot be turned back into a readable name.
+
+Fine-grained pruning (by radius, or by LOD level) exists in `StorePruner` but has no
+command yet. It refuses to touch the loaded world, and opening a store for an unloaded
+world is not implemented, so nothing can currently reach it. That is the next piece.
 
 ## Checking it loaded
 
