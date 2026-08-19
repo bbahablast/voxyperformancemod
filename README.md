@@ -17,6 +17,12 @@ back. This adds size accounting, pruning that actually reclaims disk, and an F3 
 | `/voxystats compact` | compacts the loaded world's store, reclaiming deleted space |
 | `/voxystats delete <n> confirm` | deletes a whole store from `list`, refusing one in use |
 
+Deletion refuses the store belonging to the world you are currently in, because removing
+files under an open RocksDB corrupts it. Client commands only run inside a world, so to
+delete a store you have to be somewhere else — join another world or server first. In
+singleplayer, where the only store is usually the one you are standing in, that means
+loading a different save.
+
 `list` finds stores for worlds that are not loaded, which is the point — the space you
 want back usually belongs to a server you have stopped playing. Multiplayer stores are
 grouped by server address; the per-world directory below it is a hash of seed and

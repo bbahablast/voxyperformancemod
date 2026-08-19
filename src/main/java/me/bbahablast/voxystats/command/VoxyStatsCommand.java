@@ -32,8 +32,13 @@ public final class VoxyStatsCommand {
                         .then(literal("list").executes(ctx -> list(ctx.getSource())))
                         .then(literal("compact").executes(ctx -> compact(ctx.getSource())))
                         .then(literal("delete")
+                                // Without this, bare "/voxystats delete" is a raw Brigadier
+                                // parse error that says nothing about what is missing.
+                                .executes(ctx -> deleteUsage(ctx.getSource()))
                                 .then(argument("index", IntegerArgumentType.integer(1))
-                                        .executes(ctx -> deleteHint(ctx.getSource()))
+                                        .executes(ctx -> deleteHint(
+                                                ctx.getSource(),
+                                                IntegerArgumentType.getInteger(ctx, "index")))
                                         .then(literal("confirm").executes(ctx -> delete(
                                                 ctx.getSource(),
                                                 IntegerArgumentType.getInteger(ctx, "index"))))))
@@ -109,9 +114,23 @@ public final class VoxyStatsCommand {
         return 1;
     }
 
-    private static int deleteHint(FabricClientCommandSource source) {
-        source.sendFeedback(Component.literal("Add 'confirm' to actually delete. This cannot be undone.")
+    private static int deleteUsage(FabricClientCommandSource source) {
+        source.sendFeedback(Component.literal("Usage: /voxystats delete <number> confirm")
                 .withStyle(ChatFormatting.YELLOW));
+        source.sendFeedback(Component.literal("The number comes from /voxystats list."));
+        return list(source);
+    }
+
+    private static int deleteHint(FabricClientCommandSource source, int index) {
+        if (index > lastListing.size()) {
+            return error(source, "No such store. Run /voxystats list first.");
+        }
+        var entry = lastListing.get(index - 1);
+        source.sendFeedback(Component.literal(
+                "Would delete " + entry.label() + " (" + bytes(entry.bytes()) + ").")
+                .withStyle(ChatFormatting.YELLOW));
+        source.sendFeedback(Component.literal(
+                "Add 'confirm' to go ahead. This cannot be undone."));
         return 1;
     }
 
@@ -125,7 +144,10 @@ public final class VoxyStatsCommand {
         // the one Voxy currently has handles on, so refuse anything inside it.
         Path active = StoreLocator.activeBasePath();
         if (active != null && entry.directory().startsWith(active)) {
-            return error(source, "That store is in use. Leave the world first.");
+            // Client commands only run inside a world, so "leave the world" alone is not
+            // actionable -- you have to be somewhere else, not nowhere.
+            return error(source, "That store belongs to the world you are in. "
+                    + "Join a different world or server, then run this again.");
         }
 
         try {
