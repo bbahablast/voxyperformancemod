@@ -8,6 +8,17 @@ back. This adds size accounting, pruning that actually reclaims disk, and an F3 
 
 **Status: early. The storage layer works; there is no GUI yet.**
 
+## Checking it loaded
+
+Look for `Voxy Storage & Stats loaded` in the log, then open F3 — there should be a
+store group showing disk/live/reclaimable bytes and per-level section counts.
+
+Registering a debug entry does not make it visible: `DebugScreenEntryList.getStatus`
+returns `NEVER` for any id it has no stored status for, and a modded id is never in a
+vanilla debug profile. So the mod switches its own group on once, on first run, and
+records that in `config/voxystats-debug-entry-initialised`. Delete that file to have it
+switched back on; toggling it off in the F3 options afterwards sticks.
+
 See [DESIGN.md](DESIGN.md) for how this was scoped and what was ruled out.
 
 ## Why deleting isn't enough

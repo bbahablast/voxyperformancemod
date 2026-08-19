@@ -19,7 +19,7 @@ import java.util.List;
  * Adds a store section to the F3 screen, next to Voxy's own entries.
  */
 public class StatsDebugEntry implements DebugScreenEntry {
-    private static final Identifier ID = Identifier.fromNamespaceAndPath(VoxyStats.MOD_ID, "store");
+    public static final Identifier ID = Identifier.fromNamespaceAndPath(VoxyStats.MOD_ID, "store");
 
     /**
      * Counting sections is a full key scan, so it cannot run per frame. Everything on
