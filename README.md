@@ -6,7 +6,9 @@ store on disk and reports what it contains.
 Voxy generates a lot of data and gives you no way to see how much, or to get any of it
 back. This adds size accounting, pruning that actually reclaims disk, and an F3 readout.
 
-**Status: early. There is no GUI yet — everything is driven by commands and F3.**
+**Status: alpha.** There is no GUI yet — everything is driven by commands and F3. Voxy
+itself is pre-release and its internals move between versions, so expect this to need a
+rebuild whenever Voxy updates.
 
 ## Commands
 

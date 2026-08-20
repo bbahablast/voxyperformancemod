@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
@@ -22,6 +23,9 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 public final class VoxyStatsCommand {
     /** Listing indices refer to this, so delete cannot act on a stale ordering. */
     private static List<StoreLocator.StoreEntry> lastListing = List.of();
+
+    /** Guards against a second compaction starting while one is still running. */
+    private static final AtomicBoolean compacting = new AtomicBoolean();
 
     private VoxyStatsCommand() {}
 
@@ -85,6 +89,12 @@ public final class VoxyStatsCommand {
         return 1;
     }
 
+    /**
+     * Compaction runs on its own thread. {@code compactRange} is synchronous and client
+     * commands execute on the render thread, so doing it inline freezes the game for as
+     * long as the rewrite takes -- seconds on a small store, minutes on a multi-gigabyte
+     * one, long enough that the OS offers to kill Minecraft.
+     */
     private static int compact(FabricClientCommandSource source) {
         var engine = StoreAccess.currentWorld();
         if (engine == null) {
@@ -95,22 +105,46 @@ public final class VoxyStatsCommand {
         if (rocks == null) {
             return error(source, "This world's backend is not RocksDB; nothing to compact.");
         }
+        if (!compacting.compareAndSet(false, true)) {
+            return error(source, "A compaction is already running.");
+        }
 
+        // Pin the world for the duration. Voxy frees idle worlds on a timer, and
+        // compacting a RocksDB handle that has been closed underneath us is a native
+        // crash, not an exception. isWorldUsed() honours this count, so the world cannot
+        // be freed while we hold it.
+        engine.acquireRef();
+
+        var client = source.getClient();
         long before = StoreInspector.totalBytes(rocks);
-        source.sendFeedback(Component.literal("Compacting; the game may stutter."));
-        try {
-            StorePruner.compact(rocks);
-        } catch (RuntimeException e) {
-            VoxyStats.LOGGER.error("Compaction failed", e);
-            return error(source, "Compaction failed: " + e.getMessage());
-        }
-        long after = StoreInspector.totalBytes(rocks);
-        if (before < 0 || after < 0) {
-            source.sendFeedback(Component.literal("Compacted; size could not be measured."));
-        } else {
-            source.sendFeedback(Component.literal("Compacted. " + bytes(Math.max(0, before - after)) + " freed.")
-                    .withStyle(ChatFormatting.GREEN));
-        }
+        source.sendFeedback(Component.literal("Compacting in the background; this may take a while."));
+
+        Thread worker = new Thread(() -> {
+            String message;
+            boolean ok = true;
+            try {
+                StorePruner.compact(rocks);
+                long after = StoreInspector.totalBytes(rocks);
+                message = (before < 0 || after < 0)
+                        ? "Compacted; size could not be measured."
+                        : "Compacted. " + bytes(Math.max(0, before - after)) + " freed.";
+            } catch (Throwable e) {
+                VoxyStats.LOGGER.error("Compaction failed", e);
+                message = "Compaction failed: " + e;
+                ok = false;
+            } finally {
+                engine.releaseRef();
+                compacting.set(false);
+            }
+            // Chat must be touched from the client thread.
+            String finalMessage = message;
+            boolean finalOk = ok;
+            client.execute(() -> source.sendFeedback(
+                    Component.literal(finalMessage)
+                            .withStyle(finalOk ? ChatFormatting.GREEN : ChatFormatting.RED)));
+        }, "voxystats-compaction");
+        worker.setDaemon(true);
+        worker.start();
         return 1;
     }
 
