@@ -71,17 +71,40 @@ Everything else — enumerating sections, deleting, flushing, reaching the live 
 through Voxy's public API. That is deliberate: Voxy is at `0.2.x` with a large open issue
 count, and a small mixin surface is what keeps an addon alive across its releases.
 
+## Supported versions
+
+| Minecraft | Voxy | Status |
+| --- | --- | --- |
+| 26.2 | 0.2.18-beta | built and tested |
+| 26.1.2 | 0.2.18-beta | builds, untested in game |
+| 1.21.x | 0.2.4 – 0.2.16 | not built — see below |
+| 1.20.4 | 0.1.5-alpha | not possible |
+
+**1.21.x** is a toolchain problem, not a code one. Voxy's storage API is identical there,
+and `StoreAccess` resolves Voxy's render system reflectively precisely so the rename
+between `IGetVoxyRenderSystem` (1.21.x) and `IVoxyRenderSystemHolder` (26.x) does not
+matter. What blocks it is the build: Fabric API for 1.21.x ships access wideners in the
+intermediary namespace, and Loom 1.16 — required for 26.x — expects the official
+namespace and has dropped the `modImplementation` configurations that used to remap
+them. Supporting 1.21.x means running a second Loom generation, not adding a row to the
+target map.
+
+**1.20.4** is out for good. Voxy 0.1.5-alpha there predates the storage abstraction
+entirely: no `StorageBackend`, no `SectionSerializationStorage`, no `VoxyCommon`. There is
+nothing to port to.
+
 ## Building
 
 Requires JDK 25 and Gradle 9.6+ (both matched to Voxy's own build).
 
 ```
-./gradlew build
+./gradlew build -PmcVersion=26.2     # one target
+./buildAll.sh                        # every target
 ```
 
-Voxy is resolved from the Modrinth maven by version ID, not version number — the same
-version number is published for several Minecraft versions, so the number alone is
-ambiguous. See `voxy_version` in `gradle.properties`.
+Targets live in the `TARGETS` map in `build.gradle`. Voxy is pinned there by Modrinth
+version *ID* rather than version number, since the same number is published for several
+Minecraft versions.
 
 ## Licensing
 
