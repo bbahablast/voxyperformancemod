@@ -1,5 +1,10 @@
 # Voxy Storage & Stats
 
+An addon for **[Voxy](https://modrinth.com/mod/voxy)** by **MCRcortex**. Voxy is required
+and is installed separately — it is All Rights Reserved, and no part of it is included in
+or redistributed by this mod. This addon is original work, not a fork or a port, and is
+released under the MIT licence.
+
 Voxy is very good at drawing terrain you're nowhere near. It's less good at telling you
 what that costs. After a few long sessions the LOD store has quietly grown to gigabytes,
 and there's no way to see how big it is or get any of it back.
