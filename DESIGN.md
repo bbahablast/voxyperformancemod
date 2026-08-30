@@ -1,39 +1,31 @@
-# Voxy Storage & Stats — Design
+# Design notes
 
-A client-side Fabric addon for [Voxy](https://modrinth.com/mod/voxy) that manages the LOD
-store on disk and surfaces what Voxy is actually doing.
+Why the addon is shaped this way. Written against `MCRcortex/voxy@337b919`
+(`0.2.19-beta`, MC 26.2), updated as things got built.
 
-Status: design only, no code yet.
+## Why storage and not performance
 
----
+Voxy is the performance layer, with Sodium and Nvidium below it. An addon claiming to make
+Voxy faster would be optimising someone else's renderer from the outside through mixins,
+against a codebase at 0.2.x with 175 open issues. That breaks on every alpha bump.
 
-## 1. Why this, and not a "performance mod"
+Disk and observability were unserved. The addons that exist cover other ground:
 
-Voxy *is* the performance layer. Below it sit Sodium and Nvidium. An addon claiming to make
-Voxy faster would have to optimise someone else's renderer from the outside via mixins —
-against a codebase at `0.2.19-beta` with 175 open issues. That breaks on every alpha bump.
-
-The unserved need is disk and observability. Nothing on Modrinth covers it:
-
-| Existing addon | Covers | Downloads |
+| Addon | Covers | Downloads |
 | --- | --- | --- |
-| Voxy WorldGen | background chunk gen + auto-ingest | 657K |
+| Voxy WorldGen | background chunk gen and auto-ingest | 657K |
 | Voxy Extra | nether fog fix, server black/whitelist, LoD mirror | 214K |
 | Voxy Server Side / Voxy Server | server-side LOD streaming | 123K / 54K |
 | Voxy Auto LOD | generate LODs without flying | 28K |
 | Voxy Fog Addon | render distance fog | 10K |
 | Voxy Hypixel Addon | per-island world isolation | 8K |
 
-Pregeneration, streaming, fog and per-server isolation are taken. Storage management is not.
+Pregeneration, streaming, fog and per-server isolation were taken. Storage management wasn't.
 
-## 2. What the source actually says
+## Relocation already existed
 
-Read against `MCRcortex/voxy@337b919` (dev, `mod_version = 0.2.19-beta`, MC `26.2`).
-
-### 2.1 Relocation already exists — correcting my own premise
-
-Issue #646 ("can I change where voxy writes to?") is **not** a missing feature. It is a
-discoverability problem. `ConfigBuildCtx` already defines path tokens:
+The first version of this plan was wrong. Issue #646, "can I change where voxy writes to?",
+looks like a missing feature and isn't. `ConfigBuildCtx` already defines path tokens:
 
 ```java
 public static final String BASE_SAVE_PATH   = "{base_save_path}";
@@ -42,19 +34,15 @@ public static final String PLAYER_UUID      = "{player_uuid}";
 public static final String DEFAULT_STORAGE_PATH = BASE_SAVE_PATH+"/"+WORLD_IDENTIFIER+"/storage/";
 ```
 
-and `BasicPathInsertionConfig` (`"BasicPathConfig"`) inserts an arbitrary path into the
-backend chain. `ConfigBuildCtx.concatPath` explicitly handles absolute paths and Windows
-drive letters — so pointing the store at another disk works today, by hand-editing
-`config.json`.
+`BasicPathInsertionConfig` inserts an arbitrary path into the backend chain, and
+`concatPath` handles absolute paths and Windows drive letters. Pointing the store at another
+disk works today by hand-editing `config.json`. It's a discoverability problem, not a
+missing capability, so relocation dropped out of scope. If it comes back it's a UI over
+something that already works, plus a safe migration.
 
-**Consequence for us:** we do not build relocation. We build a *UI and a safe migration* for
-a capability that already exists but that ~nobody can find. That is a smaller, more honest
-claim, and it cannot be "fixed upstream" out from under us — upstream shipping a config GUI
-is the only thing that would obsolete it.
+## The prune and measure API is public
 
-### 2.2 The prune/measure API is public and sufficient
-
-`StorageBackend` (`common/config/storage/StorageBackend.java`) exposes everything needed:
+`StorageBackend` has what's needed:
 
 ```java
 public abstract MemoryBuffer getSectionData(long key, MemoryBuffer scratch);
@@ -65,22 +53,15 @@ public List<StorageBackend>  getChildBackends();   // + collectAllBackends()
 void iteratePositions(int level, LongConsumer callback);  // via IStoredSectionPositionIterator
 ```
 
-`iteratePositions` enumerates stored section keys per LOD level; `WorldEngine` has static
-decoders `getLevel/getX/getY/getZ(long id)` and `MAX_LOD_LAYER = 4`. So "walk every stored
-section, decode its position, measure it, optionally delete it" is expressible entirely
-against public methods. No renderer internals touched.
+`iteratePositions` walks stored section keys per LOD level, and `WorldEngine` has static
+decoders plus `MAX_LOD_LAYER = 4`. Walking every section, decoding its position, measuring
+it and optionally deleting it is all expressible against public methods.
 
-### 2.3 Reachability
+`WorldEngine.storage` is public, so enumeration needs no mixin. Deletion and byte sizes live
+one layer down on `StorageBackend`, held in `SectionSerializationStorage.backend`, which
+isn't public. That single field is why the first accessor exists.
 
-`WorldEngine.storage` is `public final SectionStorage`, and `SectionStorage` implements
-`iteratePositions`. Enumeration therefore needs no mixin at all.
-
-`deleteSectionData` and byte sizes live on `StorageBackend`, held in
-`SectionSerializationStorage.backend` (non-public). That needs exactly **one**
-`@Accessor` mixin on a single field. That is our entire mixin surface — worth stating in the
-README, because a one-field accessor is about as update-resilient as an addon gets.
-
-### 2.4 We cannot register our own config types
+## What an addon can't do
 
 `Serialization.init()` scans only `me.cortex.voxy`, from Voxy's own mod container root:
 
@@ -88,62 +69,55 @@ README, because a one-field accessor is about as update-resilient as an addon ge
 var path = FabricLoader.getInstance().getModContainer("voxy").get().getRootPaths().get(0);
 ```
 
-So the tempting design — inject a metering `DelegatingStorageAdaptor` into the config chain
-to count bytes — **will not work** for an addon. Squatting in `me.cortex.voxy` to get picked
-up by the classloader scan is fragile and rude. We measure at runtime instead, via
-`collectAllBackends()` plus direct filesystem sizing of the resolved store path.
+So the tidy design, injecting a metering `DelegatingStorageAdaptor` into the config chain to
+count bytes, doesn't work from outside. Squatting in `me.cortex.voxy` to get picked up by
+the scan is fragile and rude. Measurement happens at runtime instead, through
+`collectAllBackends()` and RocksDB's own size properties.
 
-### 2.5 Integration points for UI
+## Scope
 
-From `fabric.mod.json`, Voxy registers `sodium:config_api_user` →
-`VoxyConfigMenu`. Voxy Extra states all its options live in the Sodium menu; we do the same
-rather than inventing a screen. For the HUD, `VoxyDebugScreenEntry` calls
-`instance.addDebug(lines)` and `RenderStatistics.addDebug(lines)` — we register our own
-debug screen entry alongside rather than mixin into theirs.
+Built:
 
-## 3. Scope
+- `list`, with size and age, covering worlds that aren't loaded
+- `stats` and an F3 group: per-level section counts, SST and memtable bytes
+- `compact`, off the render thread, with the world pinned by `acquireRef`
+- `delete` for a whole store, refusing anything under the active base path
 
-**v0.1**
-- Storage browser: every world/server Voxy has a store for, with on-disk size, section
-  counts per LOD level, and last-played date.
-- Prune: delete a whole world's store; delete sections beyond radius N of a chosen centre;
-  delete LOD level 0 only (the bulk of the bytes) while keeping coarse levels.
-- Relocation UI: pick a directory, rewrite `config.json` to a `BasicPathConfig` wrapper, and
-  move existing data with verification before deleting the source.
-- Diagnostics HUD: store size, section counts, ingest/save queue depth, `MemoryBuffer`
-  count and total MB (all already surfaced by `VoxyInstance.addDebug`).
+Not built:
 
-**Explicitly out of scope**
-- Anything touching the renderer, shaders, or Iris.
-- LOD relighting / seam repair (issues #638, #626) — upstream's to fix.
-- Server-side anything.
+- radius and level pruning. The code is in `StorePruner`, but nothing can reach it until a
+  store can be opened for a world that isn't loaded.
+- a relocation UI
 
-## 4. Risks
+Out of scope: the renderer, shaders and Iris; LOD relighting and seam repair (#638, #626,
+upstream's to fix); anything server-side.
+
+## Risks
 
 | Risk | Handling |
 | --- | --- |
-| Deleting live data corrupts a world | Prune only while no `WorldEngine` is active for that identifier; `flush()` after; never touch the store of the world currently loaded. |
-| `0.2.x` is pre-release; API churn | Depend on public `StorageBackend` methods + one accessor. Pin a tested Voxy range in `depends`. |
-| Voxy is All-Rights-Reserved, "Do not redistribute" | We compile against it from the Modrinth maven and ship **only our own jar**. No Voxy classes bundled, no code copied. Worth a line in the README. |
-| RocksDB space is not reclaimed on delete | Deletes are logical; report both logical section bytes and actual directory size, and expose an explicit compaction step. Needs verification against `RocksDBStorageBackend`. |
-| Upstream ships a config GUI | Accepted. Prune and stats still stand alone. |
+| deleting live data corrupts a world | `delete` refuses anything under the active base path, and `StorePruner` refuses the loaded engine |
+| compaction freezing the client | runs on a daemon thread, with the world pinned by `acquireRef` so Voxy can't free the DB underneath it |
+| 0.2.x API churn | public methods plus two accessors. The `depends` range still has no upper bound, which is a live problem. |
+| Voxy is All Rights Reserved | compiled against, never bundled, checked on every build |
 
-## 5. Build target
+## Questions that got answered
 
-Match Voxy's own `gradle.properties`: MC `26.2`, Fabric loader `0.19.3`, Loom
-`1.16-SNAPSHOT`, Sodium `mc26.2-0.9.2-alpha.3-fabric`. Voxy pulled from
-`https://api.modrinth.com/maven` (`maven.modrinth:voxy:<version>`), `compileOnly` +
-`modRuntimeOnly` — never bundled.
+**Does RocksDB reclaim disk on delete without compaction?** No. `deleteSectionData` is a
+`db.delete`, which writes a tombstone, and `flush()` only calls `flushWal(true)`. Nothing in
+Voxy calls `compactRange`, so compaction had to be built here.
 
-Entrypoints: `client` for init, `sodium:config_api_user` for options, plus a debug screen
-entry for the HUD.
+**Can stores be found for worlds that aren't loaded?** Yes, from disk. `StoreLocator` walks
+both roots looking for a directory that contains `storage/`. The world directory is a 32
+character hash of seed and dimension so it can't be labelled, but multiplayer stores sit
+under the server address, which can.
 
-## 6. Open questions
+**Where do stores live?** Singleplayer under `<save>/voxy`, multiplayer under
+`.voxy/saves/<server address>`. Both are covered.
 
-1. Does RocksDB reclaim disk on `deleteSectionData` without explicit compaction? Determines
-   whether "freed 4 GB" is honest or a lie.
-2. Is there a safe way to enumerate stores for worlds that are *not* currently loaded?
-   `.voxy/saves/<world_identifier>/storage/` is walkable on disk, but mapping a directory
-   back to a human-readable server/world name needs a check of `WorldIdentifier.getWorldId()`.
-3. Singleplayer stores live under the save dir (`<world>/voxy`), multiplayer under
-   `.voxy/saves` — the browser must cover both roots.
+## Still open
+
+Opening a store for a world that isn't loaded. RocksDB's LOCK file makes this safe by
+construction, since the live world's database can't be opened twice, which turns the
+dangerous case into an error instead of corruption. That unlocks radius and level pruning,
+the main thing still missing.
